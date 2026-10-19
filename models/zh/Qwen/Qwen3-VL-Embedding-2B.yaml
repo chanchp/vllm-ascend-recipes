@@ -1,0 +1,303 @@
+meta:
+  title: "Qwen3-VL-Embedding-2B"
+  slug: "qwen3-vl-embedding-2b"
+  provider: "Qwen"
+  description: "2B 视觉语言嵌入模型，用于文本与多模态检索。已在 Atlas 300I DUO（310P）单卡用 vLLM Ascend 0.23.0 完成 pooling 验证。"
+  date_added: "2026-10-19"
+  date_updated: "2026-10-19"
+  difficulty: beginner
+  tasks:
+    - multimodal
+  performance_headline: "Atlas 300I DUO（310P）单卡 pooling，已用 vLLM Ascend 0.23.0 验证"
+  related_recipes: []
+  hardware:
+    atlas_300i_duo: verified
+    atlas_800_a2: experimental
+
+model:
+  model_id: "Qwen/Qwen3-VL-Embedding-2B"
+  min_vllm_version: "0.19.0"
+  architecture: dense
+  parameter_count: "2B"
+  active_parameters: null
+  context_length: 1024
+  modality: multimodal
+  base_args:
+    - "--served-model-name"
+    - "Qwen/Qwen3-VL-Embedding-2B"
+    - "--runner"
+    - "pooling"
+    - "--max-model-len"
+    - "1024"
+  base_env:
+    PYTORCH_NPU_ALLOC_CONF: "expandable_segments:True"
+    VLLM_USE_MODELSCOPE: "1"
+  docker_image:
+    atlas_800_a2: "quay.io/ascend/vllm-ascend:v0.23.0"
+    atlas_300i_duo: "quay.io/ascend/vllm-ascend:v0.23.0-310p"
+  nightly_required: false
+  install:
+    pip: false
+    docker:
+      command: "docker run --rm --name vllm-ascend --shm-size=1g --net=host --device /dev/davinci0 --device /dev/davinci_manager --device /dev/devmm_svm --device /dev/hisi_hdc -v /root/.cache:/root/.cache -it quay.io/ascend/vllm-ascend:v0.23.0-310p bash"
+      note: "昇腾 310P 官方镜像；完整设备与驱动挂载见 env_setup.container。"
+
+features: {}
+
+opt_in_features: []
+
+variants:
+  default:
+    precision: fp16
+    vram_minimum_gb: 8
+    description: "BF16 权重在 Atlas 300I DUO 上以 float16 pooling 服务（已验证）"
+
+compatible_strategies:
+  - single_node_310p
+  - single_node_A2
+
+hardware_overrides: {}
+strategy_overrides: {}
+
+dependencies: []
+
+guide: ""
+
+config_params:
+  max_model_len:
+    default: 1024
+    type: number
+    description: "最大上下文长度。Atlas 300I DUO 上必须显式设置；自动探测出的大上下文会按 O(max_model_len^2) 分配 attention mask 并可能 OOM。"
+
+overview: |-
+  Qwen3-VL-Embedding-2B 是 Qwen3 系列的 2B 视觉语言嵌入模型，为文本和混合多模态输入生成向量，用于检索、聚类和相似度排序。本 recipe 将官方 vLLM Ascend tutorial 迁移为结构化 YAML，并在 Atlas 300I DUO（310P3）上用 vLLM 0.23.0 / vLLM Ascend 0.23.0 完成 pooling 端到端冒烟。启动时使用 `--runner pooling` 和 `--dtype float16`。
+
+weight_download:
+  - weight_version: BF16
+    sources:
+      - source: ModelScope
+        url: https://www.modelscope.cn/models/Qwen/Qwen3-VL-Embedding-2B
+        command: |-
+          ```bash
+          pip install modelscope
+          modelscope download --model Qwen/Qwen3-VL-Embedding-2B
+          ```
+      - source: HuggingFace
+        url: https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B
+        command: |-
+          ```bash
+          pip install -U huggingface_hub
+          huggingface-cli download Qwen/Qwen3-VL-Embedding-2B
+          ```
+      - source: Modelers
+        url: ""
+        command: ""
+      - source: GitCode
+        url: ""
+        command: ""
+
+prerequisites:
+  - title: Model Weight
+    content: |-
+      | 权重版本 | 硬件要求 | 下载 |
+      |----------|----------|------|
+      | BF16 | 一张 Ascend Atlas 300I DUO 48 GB，或一张 Ascend Atlas 800I A2 64 GB | [ModelScope](https://www.modelscope.cn/models/Qwen/Qwen3-VL-Embedding-2B) |
+
+      将权重下载到服务进程可读的目录（例如 `/root/.cache/`）。
+
+      > **路径说明**：记下本地路径，后续 `vllm serve` 使用同一目录，或使用已启用缓存的模型 ID。
+
+env_setup:
+  container:
+    300I DUO:
+      content: |-
+        使用官方 `-310p` 镜像（本 recipe 在 vLLM / vLLM Ascend 0.23.0 上验证）：
+
+        ```bash
+        export IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-310p
+
+        docker run --rm \
+            --name vllm-ascend \
+            --shm-size=1g \
+            --net=host \
+            --privileged=true \
+            --device /dev/davinci0 \
+            --device /dev/davinci_manager \
+            --device /dev/devmm_svm \
+            --device /dev/hisi_hdc \
+            -v /usr/local/dcmi:/usr/local/dcmi \
+            -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+            -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+            -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+            -v /etc/ascend_install.info:/etc/ascend_install.info \
+            -v /root/.cache:/root/.cache \
+            -it $IMAGE bash
+        ```
+
+        > 在 Atlas 300I DUO 上，如已安装请卸载：`pip uninstall -y triton-ascend triton`。
+    A2:
+      content: |-
+        tutorial 中的 Atlas A2 镜像（本 recipe 标为 experimental，硬件冒烟在 310P）：
+
+        ```bash
+        export IMAGE=quay.io/ascend/vllm-ascend:v0.23.0
+
+        docker run --rm \
+            --name vllm-ascend \
+            --shm-size=1g \
+            --net=host \
+            --device /dev/davinci0 \
+            --device /dev/davinci_manager \
+            --device /dev/devmm_svm \
+            --device /dev/hisi_hdc \
+            -v /usr/local/dcmi:/usr/local/dcmi \
+            -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+            -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+            -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+            -v /etc/ascend_install.info:/etc/ascend_install.info \
+            -v /root/.cache:/root/.cache \
+            -it $IMAGE bash
+        ```
+  pip:
+    content: |-
+      若不使用 Docker，可按[安装指南](https://docs.vllm.ai/projects/ascend/zh-cn/latest/installation.html)从源码安装 `vllm-ascend`。
+
+scenarios:
+  - npu: Atlas 300I DUO
+    precision: fp16
+    deployment: Single-Node
+    case: 300I DUO（pooling，TP1）
+    tags: [310p-single]
+    strategy: single_node_310p
+    steps:
+      - title: Start the server
+        content: |-
+          Atlas 300I DUO 单卡 pooling（已验证）。一张 310P3 即可；权重加运行时大约占用 21 GB。
+
+          ```bash
+          export ASCEND_RT_VISIBLE_DEVICES=0
+          export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+
+          vllm serve your_model_path \
+              --served-model-name Qwen/Qwen3-VL-Embedding-2B \
+              --runner pooling \
+              --dtype float16 \
+              --max-model-len {{max_model_len}} \
+              --compilation-config '{"cudagraph_capture_sizes": [1024,512]}' \
+              --additional-config '{"ascend_compilation_config": {"fuse_norm_quant": false}}' \
+              --host 0.0.0.0 \
+              --port 8000
+          ```
+
+          > - 将 `your_model_path` 换成本地权重目录或 `Qwen/Qwen3-VL-Embedding-2B`。
+          > - 必须带 `--runner pooling`。接口任务为 `embed` 与 `token_embed`。
+          > - Atlas 300I DUO 上保持 `--max-model-len` 显式（tutorial 基线 `1024`），并设置 `--dtype float16`。
+          > - 日志出现 `Application startup complete` 即启动成功。310P 上 `No module named 'triton'` 属于预期警告。
+          > - `--compilation-config` 限制 cudagraph capture 尺寸，因为 310P 硬件流较少。
+      - title: Service Verification
+        content: |-
+          服务启动后，按下方验证章节发送 `/v1/embeddings` 请求。
+  - npu: Atlas 800I A2
+    precision: bf16
+    deployment: Single-Node
+    case: 单机单卡（A2）
+    tags: [a2-single]
+    strategy: single_node_A2
+    steps:
+      - title: Start the server
+        content: |-
+          官方 tutorial 中的 Atlas A2 单卡 pooling（本 recipe 标为 experimental）。
+
+          ```bash
+          export ASCEND_RT_VISIBLE_DEVICES=0
+          export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+
+          vllm serve your_model_path \
+              --served-model-name Qwen/Qwen3-VL-Embedding-2B \
+              --runner pooling \
+              --max-model-len {{max_model_len}} \
+              --port 8000
+          ```
+      - title: Service Verification
+        content: |-
+          服务启动后，按下方验证章节发送 `/v1/embeddings` 请求。
+
+verification: |-
+  服务启动后，用 tutorial 中的两句文本请求向量。
+
+  ```bash
+  curl -sS http://localhost:8000/v1/embeddings \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Qwen/Qwen3-VL-Embedding-2B",
+          "input": [
+              "The capital of China is Beijing.",
+              "Gravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun."
+          ]
+      }'
+  ```
+
+  预期：HTTP 200，`object` 为 `list`，`data` 含两条 embedding，`usage.prompt_tokens` 为 39。
+
+  已在 Atlas 300I DUO（310P3）上用 vLLM 0.23.0 / vLLM Ascend 0.23.0 验证：两条向量维度均为 2048。每条向量的前两个值与 tutorial 样例一致（`-0.028474265709519386`、`-0.02678542211651802` 以及 `-0.016785264015197754`、`-0.003787524998188019`）。
+
+evaluation:
+  accuracy:
+    content: |-
+      官方 tutorial 用 MTEB（`VllmEncoderWrapper`，示例任务 `LeCaRDv2`）评估检索。本 recipe 不新报 MTEB 分数；请在自有数据缓存上重跑该流程。
+  performance:
+    content: |-
+      用 embeddings benchmark 测量 pooling 吞吐：
+
+      ```bash
+      vllm bench serve \
+          --model Qwen/Qwen3-VL-Embedding-2B \
+          --backend openai-embeddings \
+          --port 8000 \
+          --dataset-name random \
+          --endpoint /v1/embeddings \
+          --random-input 200 \
+          --save-result \
+          --result-dir ./
+      ```
+
+      | 场景 | 设置 | 说明 |
+      | ---- | ---- | ---- |
+      | 功能冒烟 | `--runner pooling`、`--dtype float16`、`--max-model-len 1024` | 一张 310P3；约占用 21 GB |
+      | 更长输入 | 仅在需要时提高 `--max-model-len` | Atlas 300I DUO 上保持保守取值 |
+
+performance:
+  accuracy: |-
+    Atlas 300I DUO 上的功能验证与 tutorial 向量前缀一致，两条样例句子的维度均为 2048。把检索质量当作已测量之前，请用自有标注集给出 MTEB 数字。
+  benchmark: |-
+    此处不宣称固定吞吐。已验证的 310P 请求在引擎预热后完成（编译约 24 秒，引擎初始化约 84 秒）。请用 `vllm bench serve --backend openai-embeddings` 按实际负载复测。
+
+tuning: |-
+  ### 调优说明
+
+  请参考[公开性能调优文档](https://docs.vllm.ai/projects/ascend/zh-cn/latest/developer_guide/performance_and_debug/optimization_and_tuning.html)。
+
+faq: |-
+  环境与安装类问题见[公开 FAQ](https://docs.vllm.ai/projects/ascend/zh-cn/latest/faqs.html)。
+
+  ### Atlas 300I DUO：启动时 OOM
+
+  **原因：** 自动上下文长度导致 attention mask 过大。
+
+  **处理：** 显式设置 `--max-model-len`（tutorial 基线 `1024`），并以 `--dtype float16` 启动。
+
+  ### 返回的不是 embedding
+
+  **原因：** 启动时没有 `--runner pooling`。
+
+  **处理：** 加上 `--runner pooling` 后重启。启动日志应出现 `Supported tasks: ['token_embed', 'embed']`。
+
+references:
+  - title: Qwen3-VL-Embedding 教程（vLLM Ascend）
+    url: https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/Qwen3-VL-Embedding.html
+  - title: ModelScope 模型下载
+    url: https://www.modelscope.cn/models/Qwen/Qwen3-VL-Embedding-2B
+  - title: HuggingFace 模型卡
+    url: https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B
+  - title: vLLM pooling 示例
+    url: https://github.com/vllm-project/vllm/tree/main/examples/pooling/embed
